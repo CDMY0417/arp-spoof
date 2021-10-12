@@ -30,6 +30,8 @@ bool operator < (flowset flow_a, flowset flow_b) {
 }
 
 #pragma pack(pop)
+#define SLEEPTIME 10
+
 
 using namespace std;
 vector<flowset> flow;
@@ -151,7 +153,7 @@ int arp_infect(pcap_t* handle) {
 				return -1;
 			}
 		}
-		sleep(1);
+		sleep(SLEEPTIME);
 	}
 	return 0;
 }
